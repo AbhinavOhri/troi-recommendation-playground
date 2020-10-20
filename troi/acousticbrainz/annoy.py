@@ -1,27 +1,30 @@
-import sys
-import urllib
-from urllib.parse import quote
-
 import requests
 import ujson
 
 from troi import Element, Recording
 
+"""
+-> annoy similarity (timbre - similar sounding)
+-> filter by similar artists (dataset name -> credit id -> similar artists)
+     -> later, add in collab filtering similar artists
+-> recordings from a given year/range
+"""
+
 
 class AnnoyLookupElement(Element):
-    '''
-        Given an recording MBID, lookup tracks that are similar given some 
+    """
+        Given an recording MBID, lookup tracks that are similar given some
         criteria (e.g. mfccs, gfccs, etc).
-    '''
+    """
 
     SERVER_URL = "http://similarity.acousticbrainz.org/api/v1/similarity/"
 
     def __init__(self, metric, mbid):
-        '''
+        """
             The given recording mbid is the source track that will be looked up 
             in the annoy index using the passed metric.
-        '''
-        Element.__init__(self)
+        """
+        super().__init__()
         self.mbid = mbid
         self.metric = metric
 
@@ -29,27 +32,28 @@ class AnnoyLookupElement(Element):
         return [Recording]
 
     def read(self, inputs, debug=False):
-        print("  annoy: read for %s/%s" % (self.metric, self.mbid))
+        if debug:
+            print("  annoy: read for %s/%s" % (self.metric, self.mbid))
 
         url = self.SERVER_URL + self.metric + "/" + self.mbid
-        r = requests.get(url)
-        if r.status_code != 200:
-            r.raise_for_status()
+        if debug:
+            print(f"  annoy: url: {url}")
+        r = requests.get(url, params={'remove_dups': 'true'})
+        r.raise_for_status()
 
         try:
             results = ujson.loads(r.text)
-        except Exception as err:
+        except ValueError as err:
             raise RuntimeError(str(err))
-
 
         entities = []
         for row in results:
             r = Recording(mbid=row['recording_mbid'], 
                           acousticbrainz={
                               'similarity': row['distance'], 
-                              'offset' : row['offset']
+                              'offset': row['offset']
                           }
-                         )
+                          )
             r.add_note("Related to %s" % self.mbid)
             entities.append(r)
 
